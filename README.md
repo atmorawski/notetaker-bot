@@ -26,10 +26,6 @@ It can **join meetings, record audio/video, stop recordings, and transcribe them
 
 ### 1. Clone the repo
 
-```bash
-git clone https://github.com/recallai/google-meet-meeting-bot.git
-```
-
 ### 2. Install dependencies
 
 ```bash
