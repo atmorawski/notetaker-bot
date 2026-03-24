@@ -141,4 +141,14 @@ vite.config.ts.timestamp-*
 # user file
 user/
 
+recordings/.env
+node_modules
+node_modules
+*.zip
+*.deb
+*.png
+*.mp4
+*.webm
+cookies.json
 recordings/
+index-*.js
