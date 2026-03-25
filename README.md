@@ -38,6 +38,7 @@ Windows:
 PORT=8080
 BOT_NAME=Andrzej's Notetaker
 CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+CHROME_USER_DATA_DIR=
 FFMPEG_PATH=ffmpeg
 AUTO_STOP_MIN_MINUTES=10
 AUTO_STOP_CHECK_EVERY_SECONDS=30
@@ -46,6 +47,7 @@ AUTO_STOP_REQUIRED_SILENT_WINDOWS=3
 ```
 
 `CHROME_PATH` is optional if Chrome is already discoverable in your environment.
+`CHROME_USER_DATA_DIR` can point to a persistent Chrome profile used by the bot.
 
 4. Start the server:
 

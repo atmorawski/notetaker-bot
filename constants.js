@@ -36,6 +36,8 @@ export const preJoinInitialDelayMs = Number(
 export const preJoinStepDelayMs = Number(
   process.env.PRE_JOIN_STEP_DELAY_MS || 1500
 );
+export const chromeUserDataDir =
+  process.env.CHROME_USER_DATA_DIR || null;
 
 export const joinButtonLabels = [
   "Ask to join",

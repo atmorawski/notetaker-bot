@@ -14,6 +14,7 @@ import {
   autoStopRequiredSilentWindows,
   autoStopSilenceWindowSeconds,
   baseUrl,
+  chromeUserDataDir,
   defaultArgs,
   defaultGuestName,
   continueWithoutMediaLabels,
@@ -246,7 +247,7 @@ async function createBrowser({ url, joinOnly = false }) {
       process.env.PUPPETEER_EXECUTABLE_PATH ||
       "/usr/bin/google-chrome",
     args: defaultArgs,
-    userDataDir: `${__dirname}/user`,
+    userDataDir: chromeUserDataDir || `${__dirname}/user`,
   };
 
   if (joinOnly) {
