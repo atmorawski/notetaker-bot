@@ -40,6 +40,7 @@ import {
   fillGuestName,
   pageText,
   pageTextIncludes,
+  waitForAnyText,
   waitForMeetingAdmission,
   waitForTextToDisappear,
 } from "./utils.js";
@@ -349,6 +350,9 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   console.log("GUEST NAME FILLED");
   await delay(preJoinStepDelayMs);
 
+  await clickIfPresent(page, ["Got it"]);
+  await delay(preJoinStepDelayMs);
+
   await clickFirstMatchingButton(page, joinButtonLabels);
   console.log("JOIN REQUEST CLICKED");
 
@@ -365,6 +369,11 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   }
 
   if (options.joinOnly) {
+    await waitForAnyText(
+      page,
+      ["asked to join", "asking to join", "wait for someone to let you in"],
+      15000
+    ).catch(() => {});
     console.log("JOIN-ONLY MODE: request submitted, skipping admission wait");
     return {
       state: waitingRoomDetected ? "waiting_room" : "join_requested",

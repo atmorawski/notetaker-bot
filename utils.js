@@ -169,6 +169,19 @@ export async function clickIfPresent(page, labels) {
   }, labels);
 }
 
+export async function waitForAnyText(page, values, timeout = 30000) {
+  await page.waitForFunction(
+    (expectedValues) => {
+      const bodyText = (document.body.innerText || "").toLowerCase();
+      return expectedValues.some((value) =>
+        bodyText.includes(value.toLowerCase())
+      );
+    },
+    { timeout },
+    values
+  );
+}
+
 export async function waitForMeetingAdmission(page, indicators, timeout = 120000) {
   await page.waitForFunction(
     (expectedIndicators) => {
