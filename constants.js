@@ -30,6 +30,12 @@ export const autoStopSilenceWindowSeconds = Number(
 export const autoStopRequiredSilentWindows = Number(
   process.env.AUTO_STOP_REQUIRED_SILENT_WINDOWS || 3
 );
+export const preJoinInitialDelayMs = Number(
+  process.env.PRE_JOIN_INITIAL_DELAY_MS || 4000
+);
+export const preJoinStepDelayMs = Number(
+  process.env.PRE_JOIN_STEP_DELAY_MS || 1500
+);
 
 export const joinButtonLabels = [
   "Ask to join",

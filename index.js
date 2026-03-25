@@ -23,7 +23,9 @@ import {
   invalidMeetingIndicators,
   joinButtonLabels,
   overridePermissions,
+  preJoinInitialDelayMs,
   preJoinLoadingIndicators,
+  preJoinStepDelayMs,
   silenceNoiseThreshold,
   waitingRoomIndicators,
 } from "./constants.js";
@@ -242,6 +244,7 @@ async function createBrowser({ url }) {
       process.env.PUPPETEER_EXECUTABLE_PATH ||
       "/usr/bin/google-chrome",
     args: defaultArgs,
+    userDataDir: `${__dirname}/user`,
   });
 
   const context = browser.defaultBrowserContext();
@@ -262,6 +265,7 @@ async function getPage(url) {
 
   await page.setUserAgent(defaultUserAgent);
   await page.goto(url, { waitUntil: "domcontentloaded" });
+  await delay(preJoinInitialDelayMs);
 
   console.log("PAGE TITLE:", await page.title());
   console.log("CURRENT URL:", page.url());
@@ -290,13 +294,16 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   await page.screenshot({ path: "meet-after-loading.png", fullPage: true });
   console.log("SCREENSHOT AFTER LOADING SAVED");
   console.log("PAGE TEXT AFTER LOADING:", (await pageText(page)).slice(0, 2000));
+  await delay(preJoinStepDelayMs);
 
   await clickIfPresent(page, dismissButtonLabels);
+  await delay(preJoinStepDelayMs);
   await clickIfPresent(page, continueWithoutMediaLabels);
-  await delay(1500);
+  await delay(preJoinStepDelayMs);
 
   await fillGuestName(page, meeting.displayName || defaultGuestName);
   console.log("GUEST NAME FILLED");
+  await delay(preJoinStepDelayMs);
 
   await clickFirstMatchingButton(page, joinButtonLabels);
   console.log("JOIN REQUEST CLICKED");
