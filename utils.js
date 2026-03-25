@@ -120,9 +120,24 @@ export async function fillGuestName(page, guestName) {
 export async function clickFirstMatchingButton(page, labels) {
   const clicked = await page.evaluate((buttonLabels) => {
     const normalized = buttonLabels.map((label) => label.toLowerCase());
-    const candidates = [...document.querySelectorAll("button, div, span")];
+    const candidates = [...document.querySelectorAll("button, [role='button'], div, span")];
+
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
+      );
+    };
 
     const target = candidates.find((element) => {
+      if (!isVisible(element)) {
+        return false;
+      }
+
       const text = (element.innerText || element.textContent || "")
         .trim()
         .toLowerCase();
@@ -136,7 +151,21 @@ export async function clickFirstMatchingButton(page, labels) {
       return false;
     }
 
-    (target.closest("button") || target).click();
+    const clickable =
+      target.closest("button") ||
+      target.closest("[role='button']") ||
+      target;
+
+    ["pointerdown", "mousedown", "mouseup", "click"].forEach((eventName) => {
+      clickable.dispatchEvent(
+        new MouseEvent(eventName, {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+        })
+      );
+    });
+
     return true;
   }, labels);
 
@@ -148,9 +177,24 @@ export async function clickFirstMatchingButton(page, labels) {
 export async function clickIfPresent(page, labels) {
   return page.evaluate((buttonLabels) => {
     const normalized = buttonLabels.map((label) => label.toLowerCase());
-    const candidates = [...document.querySelectorAll("button, div, span")];
+    const candidates = [...document.querySelectorAll("button, [role='button'], div, span")];
+
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
+      );
+    };
 
     const target = candidates.find((element) => {
+      if (!isVisible(element)) {
+        return false;
+      }
+
       const text = (element.innerText || element.textContent || "")
         .trim()
         .toLowerCase();
@@ -164,7 +208,21 @@ export async function clickIfPresent(page, labels) {
       return false;
     }
 
-    (target.closest("button") || target).click();
+    const clickable =
+      target.closest("button") ||
+      target.closest("[role='button']") ||
+      target;
+
+    ["pointerdown", "mousedown", "mouseup", "click"].forEach((eventName) => {
+      clickable.dispatchEvent(
+        new MouseEvent(eventName, {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+        })
+      );
+    });
+
     return true;
   }, labels);
 }
