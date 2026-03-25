@@ -297,6 +297,26 @@ async function getPage(url) {
   return page;
 }
 
+async function getExistingMeetPage(url) {
+  const pages = await browser.pages();
+  const normalizedUrl = url.toLowerCase();
+
+  for (const page of pages) {
+    const currentUrl = page.url().toLowerCase();
+    if (
+      currentUrl === normalizedUrl ||
+      currentUrl.startsWith(normalizedUrl) ||
+      currentUrl.includes("meet.google.com")
+    ) {
+      await page.bringToFront();
+      console.log("REUSING EXISTING MEET PAGE:", page.url());
+      return page;
+    }
+  }
+
+  return null;
+}
+
 async function assertMeetingPageIsJoinable(page, meetingUrl) {
   const content = (await pageText(page)).toLowerCase();
 
@@ -399,7 +419,11 @@ const main = async (id, recording, meetingUrl, displayName, options = {}) => {
   const resolvedMeetingUrl = buildMeetingUrl(meetingUrl || id, baseUrl);
 
   console.log("BEFORE getPage");
-  const page = await getPage(resolvedMeetingUrl);
+  let page = null;
+  if (options.joinOnly && browserMode === "remote-debugging") {
+    page = await getExistingMeetPage(resolvedMeetingUrl);
+  }
+  page = page || (await getPage(resolvedMeetingUrl));
   console.log("AFTER getPage");
 
   const meeting = meetings.find((item) => item.id === id);
