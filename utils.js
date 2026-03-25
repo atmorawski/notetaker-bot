@@ -1,85 +1,183 @@
-import { userConfig } from "./constants.js";
-
-export const delay = (time) => {
-  return new Promise(function (resolve) {
+export const delay = (time) =>
+  new Promise((resolve) => {
     setTimeout(resolve, time);
   });
-};
 
-export async function isLoggedIn(page) {
-  const cookies = await page.cookies();
-  const loggedIn = cookies.some(
-    (c) => c.domain.includes("google.com") && c.name === "SID"
+export function buildMeetingUrl(idOrUrl, baseUrl) {
+  if (!idOrUrl) {
+    throw new Error("Meeting id or URL is required");
+  }
+
+  if (idOrUrl.startsWith("http://") || idOrUrl.startsWith("https://")) {
+    return idOrUrl;
+  }
+
+  return `${baseUrl}/${idOrUrl}`;
+}
+
+export async function pageText(page) {
+  return page.evaluate(() => document.body.innerText || "");
+}
+
+export async function pageTextIncludes(page, value) {
+  const content = await pageText(page);
+  return content.toLowerCase().includes(value.toLowerCase());
+}
+
+export async function fillGuestName(page, guestName) {
+  await page.waitForFunction(
+    () => {
+      const inputs = [...document.querySelectorAll("input")];
+
+      return inputs.some((input) => {
+        const rect = input.getBoundingClientRect();
+        const style = window.getComputedStyle(input);
+        const label = [
+          input.placeholder,
+          input.getAttribute("aria-label"),
+          input.name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        const looksLikeGuestNameField =
+          input.type === "text" ||
+          label.includes("your name") ||
+          label.includes("name") ||
+          label.includes("imi") ||
+          label.includes("nazwa");
+
+        const isVisible =
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.visibility !== "hidden" &&
+          style.display !== "none";
+
+        return looksLikeGuestNameField && isVisible && !input.disabled;
+      });
+    },
+    { timeout: 60000 }
   );
 
-  console.log(loggedIn ? "already logged in." : "not logged in");
+  const filled = await page.evaluate((name) => {
+    const inputs = [...document.querySelectorAll("input")];
 
-  return loggedIn;
-}
+    const isVisibleTextInput = (input) => {
+      const rect = input.getBoundingClientRect();
+      const style = window.getComputedStyle(input);
 
-export const loginUser = async (page) => {
-  console.log("START LOGIN FLOW");
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none" &&
+        !input.disabled
+      );
+    };
 
-  // 1. Detect account chooser
-  const pageText = await page.evaluate(() => document.body.innerText);
+    const target =
+      inputs.find((input) => {
+        const label = [
+          input.placeholder,
+          input.getAttribute("aria-label"),
+          input.name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-  if (pageText.includes("Use another account")) {
-    console.log("ACCOUNT CHOOSER DETECTED");
+        return (
+          isVisibleTextInput(input) &&
+          (label.includes("your name") ||
+            label.includes("name") ||
+            label.includes("imi") ||
+            label.includes("nazwa"))
+        );
+      }) ||
+      inputs.find(
+        (input) => input.type === "text" && isVisibleTextInput(input)
+      );
 
-    const clicked = await page.evaluate(() => {
-  const elements = [...document.querySelectorAll("div, span, button")];
-  const target = elements.find(el => el.innerText?.trim() === "Use another account");
-  if (target) {
-    target.click();
+    if (!target) {
+      return false;
+    }
+
+    target.focus();
+    target.value = "";
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.value = name;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
+  }, guestName);
+
+  if (!filled) {
+    throw new Error("Guest name input not found");
   }
-  return false;
-});
-
-console.log("USE ANOTHER ACCOUNT CLICKED:", clicked);
-
-if (clicked) {
-  console.log("WAITING FOR EMAIL OR NAVIGATION AFTER ACCOUNT CHOOSER");
-
-  await Promise.race([
-    page.waitForSelector('input[type="email"]', { timeout: 30000 }),
-    page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
-  ]);
-
-  console.log("ACCOUNT CHOOSER STEP FINISHED");
 }
+
+export async function clickFirstMatchingButton(page, labels) {
+  const clicked = await page.evaluate((buttonLabels) => {
+    const normalized = buttonLabels.map((label) => label.toLowerCase());
+    const candidates = [...document.querySelectorAll("button, div, span")];
+
+    const target = candidates.find((element) => {
+      const text = (element.innerText || element.textContent || "")
+        .trim()
+        .toLowerCase();
+
+      return normalized.some(
+        (label) => text === label || text.includes(label)
+      );
+    });
+
+    if (!target) {
+      return false;
+    }
+
+    (target.closest("button") || target).click();
+    return true;
+  }, labels);
+
+  if (!clicked) {
+    throw new Error(`No button found for labels: ${labels.join(", ")}`);
   }
+}
 
-  // 2. EMAIL STEP
-  console.log("WAITING FOR EMAIL INPUT");
-  await page.waitForSelector('input[type="email"]', { timeout: 30000 });
+export async function clickIfPresent(page, labels) {
+  return page.evaluate((buttonLabels) => {
+    const normalized = buttonLabels.map((label) => label.toLowerCase());
+    const candidates = [...document.querySelectorAll("button, div, span")];
 
-  await page.type('input[type="email"]', process.env.GOOGLE_EMAIL, {
-    delay: 50,
-  });
+    const target = candidates.find((element) => {
+      const text = (element.innerText || element.textContent || "")
+        .trim()
+        .toLowerCase();
 
-  console.log("EMAIL TYPED");
+      return normalized.some(
+        (label) => text === label || text.includes(label)
+      );
+    });
 
-  const nextBtn = await page.$("#identifierNext button");
-  if (nextBtn) {
-    await nextBtn.click();
-  }
+    if (!target) {
+      return false;
+    }
 
-  await page.waitForNavigation({ waitUntil: "networkidle2" });
+    (target.closest("button") || target).click();
+    return true;
+  }, labels);
+}
 
-  // 3. PASSWORD STEP
-  console.log("WAITING FOR PASSWORD INPUT");
-  await page.waitForSelector('input[type="password"]', { timeout: 30000 });
-
-  await page.type('input[type="password"]', process.env.GOOGLE_PASSWORD, {
-    delay: 50,
-  });
-
-  console.log("PASSWORD TYPED");
-
-  await page.keyboard.press("Enter");
-
-  await page.waitForNavigation({ waitUntil: "networkidle2" });
-
-  console.log("LOGIN FINISHED");
-};
+export async function waitForMeetingAdmission(page, indicators, timeout = 120000) {
+  await page.waitForFunction(
+    (expectedIndicators) => {
+      const bodyText = (document.body.innerText || "").toLowerCase();
+      return expectedIndicators.some((indicator) =>
+        bodyText.includes(indicator.toLowerCase())
+      );
+    },
+    { timeout },
+    indicators
+  );
+}

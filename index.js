@@ -5,38 +5,46 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { getStream, launch } from "puppeteer-stream";
 import path from "path";
 import fs from "fs";
+import { execFile } from "child_process";
+import util from "util";
 import {
-  defaultArgs,
-  overridePermissions,
-  defaultUserAgent,
-  loginUrl,
+  autoStopCheckEverySeconds,
+  autoStopMinMinutes,
+  autoStopRequiredSilentWindows,
+  autoStopSilenceWindowSeconds,
   baseUrl,
+  defaultArgs,
+  defaultGuestName,
+  continueWithoutMediaLabels,
+  defaultUserAgent,
+  dismissButtonLabels,
+  ffmpegPath,
+  inCallIndicators,
+  invalidMeetingIndicators,
+  joinButtonLabels,
+  overridePermissions,
+  silenceNoiseThreshold,
+  waitingRoomIndicators,
 } from "./constants.js";
-import { isLoggedIn, loginUser } from "./utils.js";
+import {
+  buildMeetingUrl,
+  clickFirstMatchingButton,
+  clickIfPresent,
+  delay,
+  fillGuestName,
+  pageText,
+  pageTextIncludes,
+  waitForMeetingAdmission,
+} from "./utils.js";
 import { BotManager, meetings } from "./botManager.js";
+import { getTranscribe } from "./transcribe.js";
+
 dotenv.config();
 
-import { exec } from "child_process";
-import util from "util";
-
-const execPromise = util.promisify(exec);
-const detectSilenceInFile = async (filePath) => {
-  try {
-    const command = `ffmpeg -i "${filePath}" -af silencedetect=noise=-35dB:d=15 -f null -`;
-    const { stderr } = await execPromise(command);
-
-    const hasSilence =
-      stderr.includes("silence_start") && stderr.includes("silence_end");
-
-    console.log("SILENCE CHECK:", hasSilence ? "SILENCE DETECTED" : "NO SILENCE");
-
-    return hasSilence;
-  } catch (e) {
-    console.error("SILENCE CHECK ERROR:", e.message);
-    return false;
-  }
-};
+const execFilePromise = util.promisify(execFile);
 const __dirname = path.resolve();
+const recordingsDir = path.join(__dirname, "recordings");
+
 const app = express();
 app.use(express.json());
 
@@ -48,15 +56,190 @@ puppeteer.use(stealth);
 
 let browser = null;
 
+async function runFfmpeg(args) {
+  return execFilePromise(ffmpegPath, args, {
+    windowsHide: true,
+    maxBuffer: 1024 * 1024 * 20,
+  });
+}
+
+async function detectSilenceInFile(filePath) {
+  try {
+    const { stderr } = await runFfmpeg([
+      "-hide_banner",
+      "-sseof",
+      `-${autoStopSilenceWindowSeconds}`,
+      "-i",
+      filePath,
+      "-af",
+      `silencedetect=noise=${silenceNoiseThreshold}:d=${autoStopSilenceWindowSeconds}`,
+      "-f",
+      "null",
+      "-",
+    ]);
+
+    const hasSilence = stderr.includes("silence_start");
+    console.log(
+      "SILENCE CHECK:",
+      hasSilence ? "SILENCE DETECTED" : "NO SILENCE"
+    );
+    return hasSilence;
+  } catch (error) {
+    console.error("SILENCE CHECK ERROR:", error.message);
+    return false;
+  }
+}
+
+async function postProcessRecording(filePath) {
+  const parsed = path.parse(filePath);
+  const fixedPath = path.join(parsed.dir, `${parsed.name}-fixed.webm`);
+  const compressedPath = path.join(parsed.dir, `${parsed.name}-small.webm`);
+
+  await runFfmpeg([
+    "-y",
+    "-i",
+    filePath,
+    "-c",
+    "copy",
+    fixedPath,
+  ]);
+
+  await runFfmpeg([
+    "-y",
+    "-i",
+    fixedPath,
+    "-vf",
+    "scale=640:-1",
+    "-c:v",
+    "libvpx",
+    "-b:v",
+    "250k",
+    "-c:a",
+    "libopus",
+    "-b:a",
+    "48k",
+    compressedPath,
+  ]);
+
+  return { fixedPath, compressedPath };
+}
+
+function markMeetingStopped(meeting, reason) {
+  meeting.isStopped = true;
+  meeting.isStopping = false;
+  meeting.stopReason = reason;
+}
+
+async function closeMeetingPage(meeting) {
+  if (meeting.page && !meeting.page.isClosed()) {
+    console.log("BEFORE page.close");
+    await meeting.page.close();
+    console.log("AFTER page.close");
+  }
+}
+
+async function finalizeRecording(meeting) {
+  if (!meeting?.filePath || !fs.existsSync(meeting.filePath)) {
+    return null;
+  }
+
+  const processed = await postProcessRecording(meeting.filePath);
+  meeting.processedFilePath = processed.fixedPath;
+  meeting.compressedFilePath = processed.compressedPath;
+
+  const transcriptSource = processed.compressedPath || processed.fixedPath;
+  const transcript = await getTranscribe(transcriptSource);
+  meeting.transcript = transcript;
+
+  return {
+    transcript,
+    fixedPath: processed.fixedPath,
+    compressedPath: processed.compressedPath,
+  };
+}
+
+async function stopMeetingRecording(meeting, reason = "manual_stop") {
+  if (!meeting) {
+    return null;
+  }
+
+  if (meeting.isStopping) {
+    return null;
+  }
+
+  meeting.isStopping = true;
+  meeting.stopReason = reason;
+
+  if (meeting.autoStopInterval) {
+    clearInterval(meeting.autoStopInterval);
+    meeting.autoStopInterval = null;
+  }
+
+  if (meeting.stream) {
+    console.log("BEFORE stream.destroy");
+    meeting.stream.destroy();
+    meeting.stream = null;
+    console.log("AFTER stream.destroy");
+  }
+
+  if (meeting.file) {
+    console.log("BEFORE file.end");
+    await new Promise((resolve) => meeting.file.end(resolve));
+    meeting.file = null;
+    console.log("AFTER file.end");
+  }
+
+  await closeMeetingPage(meeting);
+  const output = await finalizeRecording(meeting);
+  markMeetingStopped(meeting, reason);
+  return output;
+}
+
+function scheduleAutoStop(meeting) {
+  if (!meeting?.filePath) {
+    return;
+  }
+
+  meeting.startedRecordingAt = new Date();
+  meeting.silentWindows = 0;
+
+  meeting.autoStopInterval = setInterval(async () => {
+    if (meeting.isStopped || meeting.isStopping) {
+      return;
+    }
+
+    const elapsedMs = Date.now() - new Date(meeting.startedRecordingAt).getTime();
+    const minRecordingMs = autoStopMinMinutes * 60 * 1000;
+
+    if (elapsedMs < minRecordingMs) {
+      return;
+    }
+
+    const hasSilence = await detectSilenceInFile(meeting.filePath);
+    meeting.silentWindows = hasSilence ? meeting.silentWindows + 1 : 0;
+
+    console.log(
+      "AUTO STOP WINDOW:",
+      `${meeting.silentWindows}/${autoStopRequiredSilentWindows}`
+    );
+
+    if (meeting.silentWindows >= autoStopRequiredSilentWindows) {
+      console.log("AUTO STOP TRIGGERED");
+      await stopMeetingRecording(meeting, "silence_auto_stop");
+    }
+  }, autoStopCheckEverySeconds * 1000);
+}
+
 async function createBrowser({ url }) {
   browser = await launch(puppeteer, {
     headless: false,
     slowMo: 100,
     defaultViewport: null,
- //   executablePath: process.env.CHROME_PATH,
-    executablePath: "/usr/bin/google-chrome",
+    executablePath:
+      process.env.CHROME_PATH ||
+      process.env.PUPPETEER_EXECUTABLE_PATH ||
+      "/usr/bin/google-chrome",
     args: defaultArgs,
-    userDataDir: `${__dirname}/user`,
   });
 
   const context = browser.defaultBrowserContext();
@@ -67,103 +250,101 @@ async function createBrowser({ url }) {
 
 async function getPage(url) {
   console.log("START BROWSER");
-  const page = await browser.newPage();
+  const existingPages = await browser.pages();
+  const page = existingPages[0] || (await browser.newPage());
   console.log("PAGE CREATED");
-  // LOAD COOKIES
-//  const cookies = JSON.parse(fs.readFileSync("./cookies.json", "utf-8"));
-//  await page.setCookie(...cookies);
-//  console.log("COOKIES LOADED");
 
+  for (const extraPage of existingPages.slice(1)) {
+    await extraPage.close().catch(() => {});
+  }
 
-   await page.setUserAgent(defaultUserAgent);
-
-await page.goto("https://accounts.google.com", {
-  waitUntil: "domcontentloaded",
-});
-
-await new Promise(resolve => setTimeout(resolve, 3000));
-
-await page.goto(url, {
-  waitUntil: "domcontentloaded",
-});
+  await page.setUserAgent(defaultUserAgent);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
 
   console.log("PAGE TITLE:", await page.title());
-console.log("CURRENT URL:", page.url());
-
-const email = await page.evaluate(() => {
-  const el = document.querySelector('[aria-label*="@"]');
-  return el ? el.getAttribute('aria-label') : 'NO EMAIL FOUND';
-});
-console.log("LOGGED USER:", email);
-
+  console.log("CURRENT URL:", page.url());
 
   return page;
 }
 
-async function joinMeet(page, recording) {
-  try {
-    await page.screenshot({ path: "meet-debug.png", fullPage: true });
-    console.log("SCREENSHOT SAVED");
+async function assertMeetingPageIsJoinable(page, meetingUrl) {
+  const content = (await pageText(page)).toLowerCase();
 
-    await page.locator('text=Dołącz').click();
-
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    console.log(
-      "AFTER JOIN TEXT:",
-      (await page.evaluate(() => document.body.innerText)).slice(0, 1500)
-    );
-    console.log("join button clicked");
-
-    return await getRecorder(page, recording);
-  } catch (err) {
-    console.log("JOIN ERROR:", err?.message || err);
-    console.log("join button not found - checking fallback...");
-
-    const pageText = await page.evaluate(() => document.body.innerText);
-    console.log("PAGE TEXT AFTER FAIL:", pageText.slice(0, 1500));
-
-    try {
-      await page.locator('text=Return to home screen').click();
-      console.log("Clicked Return to home screen");
-    } catch (e) {
-      console.log("Return button not found");
+  for (const indicator of invalidMeetingIndicators) {
+    if (content.includes(indicator.toLowerCase())) {
+      throw new Error(`Invalid or expired Google Meet link: ${meetingUrl}`);
     }
-
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    await page.screenshot({ path: "meet-after-return.png", fullPage: true });
-    console.log("AFTER RETURN SCREENSHOT SAVED");
-
-    return await getRecorder(page, recording);
   }
+}
+
+async function joinMeetAsGuest(page, meeting, recording, options = {}) {
+  await page.screenshot({ path: "meet-debug.png", fullPage: true });
+  console.log("SCREENSHOT SAVED");
+
+  await assertMeetingPageIsJoinable(page, meeting.meetingUrl || meeting.id);
+
+  await clickIfPresent(page, dismissButtonLabels);
+  await clickIfPresent(page, continueWithoutMediaLabels);
+  await delay(1500);
+
+  await fillGuestName(page, meeting.displayName || defaultGuestName);
+  console.log("GUEST NAME FILLED");
+
+  await clickFirstMatchingButton(page, joinButtonLabels);
+  console.log("JOIN REQUEST CLICKED");
+
+  let waitingRoomDetected = null;
+  for (const indicator of waitingRoomIndicators) {
+    if (await pageTextIncludes(page, indicator)) {
+      waitingRoomDetected = indicator;
+      break;
+    }
+  }
+
+  if (waitingRoomDetected) {
+    console.log("WAITING ROOM DETECTED:", waitingRoomDetected);
+  }
+
+  await waitForMeetingAdmission(page, inCallIndicators);
+  meeting.joinedAt = new Date();
+  console.log("MEETING ADMISSION DETECTED");
+  console.log("AFTER JOIN TEXT:", (await pageText(page)).slice(0, 1500));
+
+  if (options.joinOnly) {
+    console.log("JOIN-ONLY MODE: skipping recorder startup");
+    return null;
+  }
+
+  return getRecorder(page, recording);
 }
 
 async function getRecorder(page, params = { audio: true, video: true }) {
   console.log("GET RECORDER START");
   let stream;
+
   try {
-     stream = await getStream(page, {
-       audio: params.audio,
-       video: params.video,
-     });
-   } catch (e) {
-     console.error("GET STREAM ERROR:", e);
-     throw e;
+    stream = await getStream(page, {
+      audio: params.audio,
+      video: params.video,
+    });
+  } catch (e) {
+    console.error("GET STREAM ERROR:", e);
+    throw e;
   }
-  console.log("recorder Started");
 
-  const filePath = path.join(__dirname, "recordings", `${Date.now()}.webm`);
+  console.log("RECORDER STARTED");
+
+  fs.mkdirSync(recordingsDir, { recursive: true });
+
+  const filePath = path.join(recordingsDir, `${Date.now()}.webm`);
   const file = fs.createWriteStream(filePath);
-
   stream.pipe(file);
 
   console.log(`Recording saved at: ${filePath}`);
   return { stream, file, filePath };
-
 }
 
-  const main = async (id, recording) => {
+const main = async (id, recording, meetingUrl, displayName, options = {}) => {
   console.log("ENTER main");
   console.log("BROWSER EXISTS:", !!browser);
 
@@ -173,114 +354,129 @@ async function getRecorder(page, params = { audio: true, video: true }) {
     console.log("AFTER createBrowser");
   }
 
+  const resolvedMeetingUrl = buildMeetingUrl(meetingUrl || id, baseUrl);
+
   console.log("BEFORE getPage");
-  const page = await getPage(`${baseUrl}/${id}`);
+  const page = await getPage(resolvedMeetingUrl);
   console.log("AFTER getPage");
 
-  const meeting = meetings.find((m) => m.id === id);
+  const meeting = meetings.find((item) => item.id === id);
   if (meeting) {
     meeting.page = page;
+    meeting.meetingUrl = resolvedMeetingUrl;
+    meeting.displayName = displayName || meeting.displayName || defaultGuestName;
   }
 
-  if (meeting && meeting.isStopped) {
+  if (meeting?.isStopped) {
     await page.close();
     return;
   }
 
-  if (!(await isLoggedIn(page))) {
-    await page.goto(loginUrl, { waitUntil: "networkidle2" });
-    console.log("LOGIN URL:", page.url());
-    console.log("LOGIN TITLE:", await page.title());
-    console.log("LOGIN PAGE TEXT:", await page.evaluate(() => document.body.innerText));
-    await loginUser(page);
-    await page.goto(`${baseUrl}/${id}`, { waitUntil: "networkidle2" });
-  }
-
-  const result = await joinMeet(page, recording);
+  const result = await joinMeetAsGuest(page, meeting || {}, recording, options);
 
   if (meeting && result) {
     meeting.stream = result.stream;
     meeting.filePath = result.filePath;
-    meeting.stream = result.stream;
     meeting.file = result.file;
+    scheduleAutoStop(meeting);
   }
+
   return result;
 };
 
 app.post("/join", async (req, res) => {
   console.log("JOIN BODY:", req.body);
-  const { id, isRecording } = req.body;
-  if (!id) return res.status(400).json({ error: "Invalid Params" });
+  const { id, meetingUrl, displayName, isRecording, joinOnly } = req.body;
+  const meetingId = id || meetingUrl;
+
+  if (!meetingId) {
+    return res.status(400).json({ error: "Invalid Params" });
+  }
 
   try {
+    const resolvedMeetingUrl = buildMeetingUrl(meetingUrl || meetingId, baseUrl);
+
     console.log("BEFORE BotManager JOIN");
-    await BotManager(req.body);
+    await BotManager({
+      ...req.body,
+      id: meetingId,
+      meetingUrl: resolvedMeetingUrl,
+      displayName: displayName || defaultGuestName,
+    });
     console.log("AFTER BotManager JOIN");
-    await main(id, isRecording);
-    res.status(200).json("ok");
+
+    await main(meetingId, isRecording, resolvedMeetingUrl, displayName, {
+      joinOnly: Boolean(joinOnly),
+    });
+
+    res.status(200).json({
+      ok: true,
+      id: meetingId,
+      meetingUrl: resolvedMeetingUrl,
+      displayName: displayName || defaultGuestName,
+      joinOnly: Boolean(joinOnly),
+      autoStop: {
+        minMinutes: autoStopMinMinutes,
+        checkEverySeconds: autoStopCheckEverySeconds,
+        silenceWindowSeconds: autoStopSilenceWindowSeconds,
+        requiredSilentWindows: autoStopRequiredSilentWindows,
+      },
+    });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "failed" });
+    res.status(500).json({ error: "failed", details: e.message });
   }
 });
 
 app.get("/stop/:id", async (req, res) => {
   const { id } = req.params;
-  if (!id) return res.status(400).json({ error: "Id not Provided" });
+  if (!id) {
+    return res.status(400).json({ error: "Id not Provided" });
+  }
 
   try {
-  console.log("BEFORE BotManager");
-  await BotManager({ id }, true);
-  console.log("AFTER BotManager");
-
-  console.log("BEFORE meetings.find");
-  const meeting = meetings.find(m => m.id === id);
-  console.log("AFTER meetings.find", meeting ? "FOUND" : "NOT FOUND");
-
-  if (meeting?.stream) {
-    console.log("BEFORE stream.destroy");
-    meeting.stream.destroy();
-    console.log("AFTER stream.destroy");
+    const meeting = meetings.find((item) => item.id === id);
+    const result = await stopMeetingRecording(meeting, "manual_stop");
+    res.status(200).json({
+      ok: true,
+      id,
+      result,
+    });
+  } catch (e) {
+    console.error("STOP ERROR:", e);
+    res.status(500).json({ error: "failed", details: e.message });
   }
-
-  if (meeting?.file) {
-    console.log("BEFORE file.end");
-    meeting.file.end();
-    console.log("AFTER file.end");
-
-    if (meeting?.page && !meeting.page.isClosed()) {
-      console.log("BEFORE page.close");
-      await meeting.page.close();
-      console.log("AFTER page.close");
-    }
-  }
-
-  console.log("BEFORE res.status");
-  res.status(200).json("ok");
-  console.log("AFTER res.status");
-} catch (e) {
-  console.error("STOP ERROR:", e);
-  res.status(500).json({ error: "failed" });
-}
 });
 
-
-
-app.get("/stop-all", async (req, res) => {
-  if (!browser)
+app.get("/stop-all", async (_req, res) => {
+  if (!browser) {
     return res.status(401).json({ error: "no instance available to stop" });
+  }
 
   try {
-    for (let meeting of meetings) {
-      await BotManager(meeting, true);
+    const stopped = [];
+
+    for (const meeting of meetings) {
+      const result = await stopMeetingRecording(meeting, "manual_stop_all");
+      stopped.push({
+        id: meeting.id,
+        result,
+      });
     }
+
     await browser.close();
     browser = null;
-    res.status(200).json("ok");
+
+    res.status(200).json({
+      ok: true,
+      stopped,
+    });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "failed" });
+    res.status(500).json({ error: "failed", details: e.message });
   }
 });
 
-app.listen(process.env.PORT, () => console.log("Server Started on port 8080"));
+app.listen(process.env.PORT || 8080, () =>
+  console.log("Server Started on port 8080")
+);

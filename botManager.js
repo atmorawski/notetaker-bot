@@ -1,37 +1,48 @@
-import { getTranscribe } from "./transcribe.js";
-
 export let meetings = [];
 
 export async function createMeeting(payload) {
   return {
     id: payload.id,
+    meetingUrl: payload.meetingUrl ?? null,
+    displayName: payload.displayName ?? null,
     isRecording: {
       audio: payload.isRecording?.audio ?? false,
       video: payload.isRecording?.video ?? false,
     },
     isStopped: payload.isStopped ?? false,
+    isStopping: false,
+    stopReason: null,
     page: null,
     stream: null,
+    file: null,
     filePath: null,
+    processedFilePath: null,
+    compressedFilePath: null,
+    transcript: null,
+    joinedAt: null,
+    startedRecordingAt: null,
+    autoStopInterval: null,
+    silentWindows: 0,
   };
 }
 
 export async function BotManager(obj, stop = false) {
   const { id } = obj;
-  let meeting = meetings.find((m) => m.id === id);
+  let meeting = meetings.find((item) => item.id === id);
 
   if (stop && meeting) {
     meeting.isStopped = true;
-    if (meeting.stream) await meeting.stream.destroy();
-    if (meeting.page) await meeting.page.close();
-    const transcribe = await getTranscribe(meeting.filePath);
-    console.log(transcribe, "transcribed text");
-  } else if (!stop) {
-    if (!meeting) {
-      meetings.push(await createMeeting(obj));
-    } else {
-      meeting.isStopped = false;
-    }
+    return meetings;
   }
+
+  if (!meeting) {
+    meetings.push(await createMeeting(obj));
+  } else {
+    meeting.isStopped = false;
+    meeting.meetingUrl = obj.meetingUrl ?? meeting.meetingUrl;
+    meeting.displayName = obj.displayName ?? meeting.displayName;
+    meeting.isRecording = obj.isRecording ?? meeting.isRecording;
+  }
+
   return meetings;
 }

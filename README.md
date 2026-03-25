@@ -1,136 +1,108 @@
-# 🎥 Google Meet Bot (Recorder + Transcriber)
+# Notetaker
 
-An automation bot for **Google Meet** built with **Node.js, Express, Puppeteer, Puppeteer-Stream, and Whisper (via Xenova Transformers.js)**.
-It can **join meetings, record audio/video, stop recordings, and transcribe them automatically**.
+Personal notetaker bot for Google Meet built with Node.js, Express, Puppeteer, `puppeteer-stream`, and local Whisper transcription.
 
-## ✨ Features
+Current direction:
 
-* 🔐 Automated Google login (via `.env` credentials)
-* 🎥 Join any Google Meet session by meeting code
-* 💾 Save recordings as `.mp4`
-* ⏹ Stop individual or all meetings
-* 📝 Transcribe recordings using **Whisper (local, no API key required)**
-* 📡 REST API for external integrations
-* ⚡ Manage multiple meetings simultaneously
+- joins Google Meet as a guest
+- fills bot display name automatically
+- waits to be admitted before starting recording
+- stores recordings locally
+- supports stop endpoints and local transcription
 
-## 🛠 Tech Stack
+## Stack
 
-* [Node.js](https://nodejs.org/) + [Express](https://expressjs.com/)
-* [puppeteer-extra](https://github.com/berstend/puppeteer-extra) (stealth automation)
-* [puppeteer-stream](https://github.com/aleixmorgadas/puppeteer-stream) (media capture)
-* [@xenova/transformers](https://xenova.github.io/transformers.js/) (Whisper transcription)
-* [ffmpeg](https://ffmpeg.org/) (audio processing)
-* [dotenv](https://www.npmjs.com/package/dotenv) (config management)
+- Node.js
+- Express
+- `puppeteer-extra` + stealth plugin
+- `puppeteer-stream`
+- `ffmpeg`
+- `@xenova/transformers` for local Whisper transcription
 
-## ⚙️ Setup
+## Setup
 
-### 1. Clone the repo
-
-### 2. Install dependencies
+1. Install dependencies:
 
 ```bash
 npm install
 ```
 
-### 3. Install ffmpeg
+2. Install `ffmpeg`.
 
-Linux:
+Windows:
+[ffmpeg download](https://ffmpeg.org/download.html)
 
-```bash
-sudo apt update && sudo apt install ffmpeg -y
-```
-
-macOS:
-
-```bash
-brew install ffmpeg
-```
-
-Windows: [Download here](https://ffmpeg.org/download.html)
-
-### 4. Create `.env` file
+3. Create `.env`:
 
 ```env
-GOOGLE_EMAIL=your_email_here
-GOOGLE_PASSWORD=your_password_here
-CHROME_PATH=/usr/bin/google-chrome
 PORT=8080
+BOT_NAME=Andrzej's Notetaker
+CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+FFMPEG_PATH=ffmpeg
+AUTO_STOP_MIN_MINUTES=10
+AUTO_STOP_CHECK_EVERY_SECONDS=30
+AUTO_STOP_SILENCE_WINDOW_SECONDS=15
+AUTO_STOP_REQUIRED_SILENT_WINDOWS=3
 ```
 
-⚠️ Use a **dummy Google account**, not your personal one.
+`CHROME_PATH` is optional if Chrome is already discoverable in your environment.
 
-### 5. Run the server
+4. Start the server:
 
 ```bash
-node index.js
+npm run dev
 ```
 
-Server starts on **[http://localhost:8080](http://localhost:8080)**
+or
 
-## 📡 API Endpoints
-
-### ▶️ Join a Meeting
-
-```http
-POST /join
+```bash
+npm start
 ```
 
-**Request Body:**
+## API
+
+### `POST /join`
+
+Starts the bot and tries to join the meeting as a guest.
+
+Example body with meeting code:
 
 ```json
 {
-    "id": "xxx-xxxx-xxx",
-    "isRecording": {
-        "audio": true,
-        "video": true
-    },
-    "isStopped": false
+  "id": "abc-defg-hij",
+  "displayName": "Andrzej's Notetaker",
+  "isRecording": {
+    "audio": true,
+    "video": true
+  }
 }
 ```
 
-### ⏹ Stop a Meeting
+Example body with full Meet URL:
 
-```http
-GET /stop/:id
+```json
+{
+  "meetingUrl": "https://meet.google.com/abc-defg-hij",
+  "displayName": "Andrzej's Notetaker",
+  "isRecording": {
+    "audio": true,
+    "video": true
+  }
+}
 ```
 
-### ⏹ Stop All Meetings
+### `GET /stop/:id`
 
-```http
-GET /stop-all
-```
+Stops a single meeting session and runs transcription for the saved file.
 
-## 📂 Recordings
+### `GET /stop-all`
 
-* Saved in the `recordings/` folder.
-* Filenames are timestamped: `1694168883000.mp4`.
+Stops all sessions and closes the browser instance.
 
-## 📝 Transcription
+## Current Notes
 
-Uses **Whisper (via Xenova Transformers.js)** for offline speech-to-text.
-
-### How it works
-
-1. Converts `.mp4` to `.wav` with **ffmpeg**.
-2. Decodes audio with `wav-decoder`.
-3. Runs Whisper (`whisper-tiny`) to get text.
-
-### Example
-
-```js
-import { getTranscribe } from "./transcribe.js";
-
-(async () => {
-  const text = await getTranscribe("recordings/1694168883000.mp4");
-  console.log("Transcript:", text);
-})();
-```
-
-**Sample Output**
-
-```
-Transcription result: { text: "Hello everyone, welcome to the meeting." }
-```
-## 📜 License
-
-MIT License © 2025
+- Google account login is no longer part of the intended flow.
+- Guest join depends on Google Meet UI labels, so selectors may need small updates over time.
+- Recording starts only after admission to the call.
+- Auto-stop checks the tail of the recording after the minimum runtime and stops after repeated silent windows.
+- After stop, the bot runs ffmpeg fix/compress and then transcribes the processed file.
