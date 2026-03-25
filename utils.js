@@ -118,7 +118,7 @@ export async function fillGuestName(page, guestName) {
 }
 
 export async function clickFirstMatchingButton(page, labels) {
-  const clicked = await page.evaluate((buttonLabels) => {
+  const targetBox = await page.evaluate((buttonLabels) => {
     const normalized = buttonLabels.map((label) => label.toLowerCase());
     const candidates = [...document.querySelectorAll("button, [role='button'], div, span")];
 
@@ -148,7 +148,7 @@ export async function clickFirstMatchingButton(page, labels) {
     });
 
     if (!target) {
-      return false;
+      return null;
     }
 
     const clickable =
@@ -156,26 +156,23 @@ export async function clickFirstMatchingButton(page, labels) {
       target.closest("[role='button']") ||
       target;
 
-    ["pointerdown", "mousedown", "mouseup", "click"].forEach((eventName) => {
-      clickable.dispatchEvent(
-        new MouseEvent(eventName, {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-        })
-      );
-    });
-
-    return true;
+    const rect = clickable.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
   }, labels);
 
-  if (!clicked) {
+  if (!targetBox) {
     throw new Error(`No button found for labels: ${labels.join(", ")}`);
   }
+
+  await page.mouse.move(targetBox.x, targetBox.y);
+  await page.mouse.click(targetBox.x, targetBox.y);
 }
 
 export async function clickIfPresent(page, labels) {
-  return page.evaluate((buttonLabels) => {
+  const targetBox = await page.evaluate((buttonLabels) => {
     const normalized = buttonLabels.map((label) => label.toLowerCase());
     const candidates = [...document.querySelectorAll("button, [role='button'], div, span")];
 
@@ -205,7 +202,7 @@ export async function clickIfPresent(page, labels) {
     });
 
     if (!target) {
-      return false;
+      return null;
     }
 
     const clickable =
@@ -213,18 +210,20 @@ export async function clickIfPresent(page, labels) {
       target.closest("[role='button']") ||
       target;
 
-    ["pointerdown", "mousedown", "mouseup", "click"].forEach((eventName) => {
-      clickable.dispatchEvent(
-        new MouseEvent(eventName, {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-        })
-      );
-    });
-
-    return true;
+    const rect = clickable.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
   }, labels);
+
+  if (!targetBox) {
+    return false;
+  }
+
+  await page.mouse.move(targetBox.x, targetBox.y);
+  await page.mouse.click(targetBox.x, targetBox.y);
+  return true;
 }
 
 export async function waitForAnyText(page, values, timeout = 30000) {
