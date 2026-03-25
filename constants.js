@@ -38,6 +38,8 @@ export const preJoinStepDelayMs = Number(
 );
 export const chromeUserDataDir =
   process.env.CHROME_USER_DATA_DIR || null;
+export const remoteDebuggingUrl =
+  process.env.CHROME_REMOTE_DEBUGGING_URL || null;
 
 export const joinButtonLabels = [
   "Ask to join",

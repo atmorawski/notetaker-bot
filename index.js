@@ -28,6 +28,7 @@ import {
   preJoinInitialDelayMs,
   preJoinLoadingIndicators,
   preJoinStepDelayMs,
+  remoteDebuggingUrl,
   silenceNoiseThreshold,
   waitingRoomIndicators,
 } from "./constants.js";
@@ -238,6 +239,18 @@ function scheduleAutoStop(meeting) {
 }
 
 async function createBrowser({ url, joinOnly = false }) {
+  if (joinOnly && remoteDebuggingUrl) {
+    browser = await puppeteerCore.connect({
+      browserURL: remoteDebuggingUrl,
+      defaultViewport: null,
+    });
+    browserMode = "remote-debugging";
+
+    const context = browser.defaultBrowserContext();
+    await context.overridePermissions(url, overridePermissions);
+    return browser;
+  }
+
   const launchOptions = {
     headless: false,
     slowMo: 100,
