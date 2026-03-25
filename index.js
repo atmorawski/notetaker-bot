@@ -344,15 +344,17 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
     console.log("WAITING ROOM DETECTED:", waitingRoomDetected);
   }
 
+  if (options.joinOnly) {
+    console.log("JOIN-ONLY MODE: request submitted, skipping admission wait");
+    return {
+      state: waitingRoomDetected ? "waiting_room" : "join_requested",
+    };
+  }
+
   await waitForMeetingAdmission(page, inCallIndicators);
   meeting.joinedAt = new Date();
   console.log("MEETING ADMISSION DETECTED");
   console.log("AFTER JOIN TEXT:", (await pageText(page)).slice(0, 1500));
-
-  if (options.joinOnly) {
-    console.log("JOIN-ONLY MODE: skipping recorder startup");
-    return null;
-  }
 
   return getRecorder(page, recording);
 }
