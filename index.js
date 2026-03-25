@@ -287,6 +287,9 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   await assertMeetingPageIsJoinable(page, meeting.meetingUrl || meeting.id);
   await waitForTextToDisappear(page, preJoinLoadingIndicators, 90000);
   console.log("PRE-JOIN LOADING DISAPPEARED");
+  await page.screenshot({ path: "meet-after-loading.png", fullPage: true });
+  console.log("SCREENSHOT AFTER LOADING SAVED");
+  console.log("PAGE TEXT AFTER LOADING:", (await pageText(page)).slice(0, 2000));
 
   await clickIfPresent(page, dismissButtonLabels);
   await clickIfPresent(page, continueWithoutMediaLabels);
