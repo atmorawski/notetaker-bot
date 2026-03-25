@@ -36,6 +36,7 @@ import {
   buildMeetingUrl,
   clickFirstMatchingButton,
   clickIfPresent,
+  clickSelectorIfPresent,
   delay,
   fillGuestName,
   getVisibleClickableElements,
@@ -355,10 +356,16 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   console.log("GUEST NAME FILLED");
   await delay(preJoinStepDelayMs);
 
-  await clickIfPresent(page, ["Got it"]);
+  const dismissedHint =
+    (await clickSelectorIfPresent(page, "button.IMT1Gf.q7vyEf")) ||
+    (await clickIfPresent(page, ["Got it", "Rozumiem"]));
+  console.log("SIGN-IN HINT DISMISSED:", dismissedHint);
   await delay(preJoinStepDelayMs);
 
-  await clickFirstMatchingButton(page, joinButtonLabels);
+  const joinClicked =
+    (await clickSelectorIfPresent(page, "button.tusd3")) ||
+    (await clickFirstMatchingButton(page, joinButtonLabels), true);
+  console.log("JOIN BUTTON CLICKED:", joinClicked);
   console.log("JOIN REQUEST CLICKED");
 
   let waitingRoomDetected = null;

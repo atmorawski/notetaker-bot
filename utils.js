@@ -266,6 +266,40 @@ export async function getVisibleClickableElements(page) {
   });
 }
 
+export async function clickSelectorIfPresent(page, selector) {
+  const targetBox = await page.evaluate((selectorValue) => {
+    const element = document.querySelector(selectorValue);
+    if (!element) {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    const isVisible =
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== "hidden" &&
+      style.display !== "none";
+
+    if (!isVisible) {
+      return null;
+    }
+
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+  }, selector);
+
+  if (!targetBox) {
+    return false;
+  }
+
+  await page.mouse.move(targetBox.x, targetBox.y);
+  await page.mouse.click(targetBox.x, targetBox.y);
+  return true;
+}
+
 export async function waitForMeetingAdmission(page, indicators, timeout = 120000) {
   await page.waitForFunction(
     (expectedIndicators) => {
