@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import express from "express";
+import puppeteerCore from "puppeteer";
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { getStream, launch } from "puppeteer-stream";
@@ -59,6 +60,7 @@ stealth.enabledEvasions.delete("media.codecs");
 puppeteer.use(stealth);
 
 let browser = null;
+let browserMode = null;
 
 async function runFfmpeg(args) {
   return execFilePromise(ffmpegPath, args, {
@@ -234,8 +236,8 @@ function scheduleAutoStop(meeting) {
   }, autoStopCheckEverySeconds * 1000);
 }
 
-async function createBrowser({ url }) {
-  browser = await launch(puppeteer, {
+async function createBrowser({ url, joinOnly = false }) {
+  const launchOptions = {
     headless: false,
     slowMo: 100,
     defaultViewport: null,
@@ -245,7 +247,15 @@ async function createBrowser({ url }) {
       "/usr/bin/google-chrome",
     args: defaultArgs,
     userDataDir: `${__dirname}/user`,
-  });
+  };
+
+  if (joinOnly) {
+    browser = await puppeteer.launch(launchOptions);
+    browserMode = "plain-puppeteer";
+  } else {
+    browser = await launch(puppeteer, launchOptions);
+    browserMode = "puppeteer-stream";
+  }
 
   const context = browser.defaultBrowserContext();
   await context.overridePermissions(url, overridePermissions);
@@ -365,8 +375,9 @@ const main = async (id, recording, meetingUrl, displayName, options = {}) => {
 
   if (!browser) {
     console.log("BEFORE createBrowser");
-    await createBrowser({ url: baseUrl });
+    await createBrowser({ url: baseUrl, joinOnly: Boolean(options.joinOnly) });
     console.log("AFTER createBrowser");
+    console.log("BROWSER MODE:", browserMode);
   }
 
   const resolvedMeetingUrl = buildMeetingUrl(meetingUrl || id, baseUrl);

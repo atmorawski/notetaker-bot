@@ -22,6 +22,7 @@
     "audio-decode": "^2.2.3",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "puppeteer": "^24.4.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "puppeteer-stream": "^3.0.21",
