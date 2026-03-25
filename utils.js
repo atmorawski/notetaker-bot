@@ -239,6 +239,33 @@ export async function waitForAnyText(page, values, timeout = 30000) {
   );
 }
 
+export async function getVisibleClickableElements(page) {
+  return page.evaluate(() => {
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
+      );
+    };
+
+    return [...document.querySelectorAll("button, [role='button'], div, span")]
+      .filter((element) => isVisible(element))
+      .map((element) => ({
+        text: (element.innerText || element.textContent || "").trim(),
+        className: element.className || "",
+        role: element.getAttribute("role") || "",
+        ariaLabel: element.getAttribute("aria-label") || "",
+        tagName: element.tagName,
+      }))
+      .filter((item) => item.text)
+      .slice(0, 80);
+  });
+}
+
 export async function waitForMeetingAdmission(page, indicators, timeout = 120000) {
   await page.waitForFunction(
     (expectedIndicators) => {

@@ -38,6 +38,7 @@ import {
   clickIfPresent,
   delay,
   fillGuestName,
+  getVisibleClickableElements,
   pageText,
   pageTextIncludes,
   waitForAnyText,
@@ -339,6 +340,10 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   await page.screenshot({ path: "meet-after-loading.png", fullPage: true });
   console.log("SCREENSHOT AFTER LOADING SAVED");
   console.log("PAGE TEXT AFTER LOADING:", (await pageText(page)).slice(0, 2000));
+  console.log(
+    "VISIBLE CLICKABLES AFTER LOADING:",
+    JSON.stringify(await getVisibleClickableElements(page), null, 2)
+  );
   await delay(preJoinStepDelayMs);
 
   await clickIfPresent(page, dismissButtonLabels);
