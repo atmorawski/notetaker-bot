@@ -300,6 +300,43 @@ export async function clickSelectorIfPresent(page, selector) {
   return true;
 }
 
+export async function clickInnerSpanInButton(page, buttonSelector, spanSelector) {
+  const clicked = await page.evaluate(
+    ({ buttonSelectorValue, spanSelectorValue }) => {
+      const button = document.querySelector(buttonSelectorValue);
+      if (!button) {
+        return false;
+      }
+
+      const span = button.querySelector(spanSelectorValue);
+      if (!span) {
+        return false;
+      }
+
+      const rect = span.getBoundingClientRect();
+      const style = window.getComputedStyle(span);
+      const isVisible =
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none";
+
+      if (!isVisible) {
+        return false;
+      }
+
+      span.click();
+      return true;
+    },
+    {
+      buttonSelectorValue: buttonSelector,
+      spanSelectorValue: spanSelector,
+    }
+  );
+
+  return clicked;
+}
+
 export async function waitForMeetingAdmission(page, indicators, timeout = 120000) {
   await page.waitForFunction(
     (expectedIndicators) => {

@@ -36,6 +36,7 @@ import {
   buildMeetingUrl,
   clickFirstMatchingButton,
   clickIfPresent,
+  clickInnerSpanInButton,
   clickSelectorIfPresent,
   delay,
   fillGuestName,
@@ -357,12 +358,14 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   await delay(preJoinStepDelayMs);
 
   const dismissedHint =
+    (await clickInnerSpanInButton(page, "button.IMT1Gf.q7vyEf", "span.UywwFc-RLmnJb")) ||
     (await clickSelectorIfPresent(page, "button.IMT1Gf.q7vyEf")) ||
     (await clickIfPresent(page, ["Got it", "Rozumiem"]));
   console.log("SIGN-IN HINT DISMISSED:", dismissedHint);
   await delay(preJoinStepDelayMs);
 
   const joinClicked =
+    (await clickInnerSpanInButton(page, "button.tusd3", "span.UywwFc-RLmnJb")) ||
     (await clickSelectorIfPresent(page, "button.tusd3")) ||
     (await clickFirstMatchingButton(page, joinButtonLabels), true);
   console.log("JOIN BUTTON CLICKED:", joinClicked);
