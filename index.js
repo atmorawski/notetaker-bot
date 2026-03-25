@@ -280,6 +280,7 @@ async function assertMeetingPageIsJoinable(page, meetingUrl) {
 async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   await page.screenshot({ path: "meet-debug.png", fullPage: true });
   console.log("SCREENSHOT SAVED");
+  console.log("PAGE TEXT BEFORE ACTIONS:", (await pageText(page)).slice(0, 2000));
 
   await assertMeetingPageIsJoinable(page, meeting.meetingUrl || meeting.id);
 
