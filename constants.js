@@ -49,6 +49,13 @@ export const continueWithoutMediaLabels = [
   "Kontynuuj bez mikrofonu i kamery",
 ];
 
+export const preJoinLoadingIndicators = [
+  "Getting ready...",
+  "You'll be able to join in just a moment",
+  "Przygotowywanie...",
+  "Za chwile bedziesz mogl dolaczyc",
+];
+
 export const waitingRoomIndicators = [
   "asking to join",
   "asked to join",

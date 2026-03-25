@@ -23,6 +23,7 @@ import {
   invalidMeetingIndicators,
   joinButtonLabels,
   overridePermissions,
+  preJoinLoadingIndicators,
   silenceNoiseThreshold,
   waitingRoomIndicators,
 } from "./constants.js";
@@ -35,6 +36,7 @@ import {
   pageText,
   pageTextIncludes,
   waitForMeetingAdmission,
+  waitForTextToDisappear,
 } from "./utils.js";
 import { BotManager, meetings } from "./botManager.js";
 import { getTranscribe } from "./transcribe.js";
@@ -283,6 +285,8 @@ async function joinMeetAsGuest(page, meeting, recording, options = {}) {
   console.log("PAGE TEXT BEFORE ACTIONS:", (await pageText(page)).slice(0, 2000));
 
   await assertMeetingPageIsJoinable(page, meeting.meetingUrl || meeting.id);
+  await waitForTextToDisappear(page, preJoinLoadingIndicators, 90000);
+  console.log("PRE-JOIN LOADING DISAPPEARED");
 
   await clickIfPresent(page, dismissButtonLabels);
   await clickIfPresent(page, continueWithoutMediaLabels);

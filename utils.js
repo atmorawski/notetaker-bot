@@ -181,3 +181,16 @@ export async function waitForMeetingAdmission(page, indicators, timeout = 120000
     indicators
   );
 }
+
+export async function waitForTextToDisappear(page, values, timeout = 120000) {
+  await page.waitForFunction(
+    (expectedValues) => {
+      const bodyText = (document.body.innerText || "").toLowerCase();
+      return expectedValues.every(
+        (value) => !bodyText.includes(value.toLowerCase())
+      );
+    },
+    { timeout },
+    values
+  );
+}
